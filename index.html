@@ -42,28 +42,16 @@ create table if not exists announcements (
   kind text not null default 'anuncio' check (kind in ('banner','oferta','anuncio')),
   title text not null, body text, link text, starts_at timestamptz, ends_at timestamptz,
   published boolean not null default false, created_at timestamptz not null default now());
-create table if not exists orders (
-  id uuid primary key default gen_random_uuid(),
-  customer_name text not null, phone text not null, address text not null, reference text,
-  items jsonb not null, total numeric(10,2) not null,
-  status text not null default 'nuevo' check (status in ('nuevo','confirmado','enviado','entregado','cancelado')),
-  created_at timestamptz not null default now());
 create table if not exists admins (user_id uuid primary key references auth.users(id) on delete cascade);
 create or replace function is_admin() returns boolean language sql security definer set search_path = public stable
   as $$ select exists (select 1 from admins where user_id = auth.uid()) $$;
 alter table products enable row level security; alter table announcements enable row level security;
-alter table orders enable row level security; alter table admins enable row level security;
+alter table admins enable row level security;
 create policy "lee productos publicados" on products for select using (published or is_admin());
 create policy "admin productos" on products for all using (is_admin()) with check (is_admin());
 create policy "lee anuncios vigentes" on announcements for select using (is_admin() or (published
   and (starts_at is null or starts_at <= now()) and (ends_at is null or ends_at >= now())));
 create policy "admin anuncios" on announcements for all using (is_admin()) with check (is_admin());
-create policy "publico registra pedidos" on orders for insert with check (status='nuevo'
-  and jsonb_typeof(items)='array' and char_length(customer_name) between 2 and 120
-  and char_length(phone) between 7 and 30 and char_length(address) between 5 and 400);
-create policy "admin lee pedidos" on orders for select using (is_admin());
-create policy "admin actualiza pedidos" on orders for update using (is_admin()) with check (is_admin());
-create policy "admin elimina pedidos" on orders for delete using (is_admin());
 create policy "admin lee admins" on admins for select using (user_id = auth.uid());
 insert into storage.buckets (id, name, public) values ('products','products',true) on conflict do nothing;
 create policy "ver imagenes" on storage.objects for select using (bucket_id='products');
@@ -312,7 +300,6 @@ async function checkout(e) {
   const text = ['*Nuevo pedido - Fragancias DLS*', '', `Nombre (factura): ${f.name.trim()}`, `Dirección: ${f.address.trim()}`, `Teléfono: ${f.phone.trim()}`, f.ref.trim() ? `Referencia: ${f.ref.trim()}` : null, '',
     ...items.map(i => `- ${i.q} x ${i.p.name}${i.p.size ? ' (' + i.p.size + ')' : ''}: ${money(cur(i.p) * i.q)}`), '', `Subtotal: ${money(sub)}`, ship != null ? `Envío: ${money(ship)}` : null, `Total: ${money(total)}`].filter(x => x !== null).join('\n');
   $('#ckb').disabled = true; $('#ckb').textContent = 'Preparando…';
-  if (sb) { try { await sb.from('orders').insert({ customer_name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), reference: f.ref.trim() || null, items: items.map(i => ({ id: i.p.id, name: i.p.name, qty: i.q, price: cur(i.p) })), total }); } catch {} }
   lastSummary = text; cartView();
   window.open(`https://wa.me/${CONFIG.WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
   return false;
@@ -346,15 +333,15 @@ async function login(e) {
 async function logout() { await sb.auth.signOut(); adminRoute(); }
 async function adminView() {
   adm.rows = null; adm.form = null;
-  const t = adm.tab, table = { productos: 'products', anuncios: 'announcements', pedidos: 'orders' }[t];
+  const t = adm.tab, table = { productos: 'products', anuncios: 'announcements' }[t];
   paintAdmin('<p>Cargando…</p>');
   const { data, error } = await sb.from(table).select('*').order('created_at', { ascending: false });
   if (error) return paintAdmin('<p class="error" role="alert">No se pudo cargar. Intenta de nuevo.</p>');
-  adm.rows = data; paintAdmin(t === 'productos' ? listP() : t === 'anuncios' ? listA() : listO());
+  adm.rows = data; paintAdmin(t === 'productos' ? listP() : listA());
 }
 function paintAdmin(body) {
   root.innerHTML = `<div class="wrap"><div class="row between"><h1>Administración</h1><div class="row"><a class="btn ghost" href="#/">Ver tienda</a><button class="btn ghost" onclick="logout()">Cerrar sesión</button></div></div>
-    <div class="row tabs">${['productos', 'anuncios', 'pedidos'].map(t => `<button class="chip${adm.tab === t ? ' on' : ''}" onclick="adm.tab='${t}';adm.msg='';adminView()">${t}</button>`).join('')}</div>
+    <div class="row tabs">${['productos', 'anuncios'].map(t => `<button class="chip${adm.tab === t ? ' on' : ''}" onclick="adm.tab='${t}';adm.msg='';adminView()">${t}</button>`).join('')}</div>
     ${adm.msg ? `<p class="note" role="status">${esc(adm.msg)}</p>` : ''}${body}</div>`;
 }
 /* Productos */
@@ -423,13 +410,6 @@ async function saveA(e, id) {
   if (error) return fail('No se pudo guardar.'); aflash('Anuncio guardado'); adminView(); return false;
 }
 async function delA(id) { if (!confirm('¿Eliminar este anuncio?')) return; await sb.from('announcements').delete().eq('id', id); aflash('Anuncio eliminado'); adminView(); }
-/* Pedidos */
-function listO() {
-  return adm.rows.length ? adm.rows.map(o => `<div class="order"><div class="row between"><b>${esc(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('es-DO')}</small></div>
-    <p>${esc(o.phone)} · ${esc(o.address)}${o.reference ? ` (${esc(o.reference)})` : ''}</p><ul>${o.items.map(i => `<li>${esc(i.qty)} × ${esc(i.name)}</li>`).join('')}</ul>
-    <div class="row between"><b>Total ${money(o.total)}</b><select aria-label="Estado" onchange="setO('${o.id}',this.value)">${['nuevo', 'confirmado', 'enviado', 'entregado', 'cancelado'].map(s => `<option ${o.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>`).join('') : '<p class="empty">Todavía no hay pedidos registrados.</p>';
-}
-async function setO(id, s) { if (s === 'cancelado' && !confirm('¿Cancelar este pedido?')) return adminView(); const { error } = await sb.from('orders').update({ status: s }).eq('id', id); aflash(error ? 'No se pudo actualizar' : 'Estado actualizado'); adminView(); }
 
 /* ============ Bienvenida ============ */
 function intro() {
