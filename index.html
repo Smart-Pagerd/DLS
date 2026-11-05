@@ -6,6 +6,8 @@
 <meta name="description" content="Fragancias DLS: perfumes y cuidado personal con envíos a toda la República Dominicana.">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="logo.jpg">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://otzbkaqfyqsuzibmnrph.supabase.co" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
 <title>Fragancias DLS | Perfumes en República Dominicana</title>
@@ -104,10 +106,10 @@ fieldset{border:0;padding:0;margin:.8rem 0;display:flex;gap:.5rem;flex-wrap:wrap
 .contact{text-align:center;border-top:1px solid var(--line)}.contact .row{justify-content:center}
 .order{border:1px solid var(--line);padding:1rem;margin:1rem 0}.tabs{margin:1rem 0}
 .toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--gold);color:#000;padding:.6rem 1.2rem;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60}.toast.show{opacity:1}
-.intro{position:fixed;inset:0;background:#000;z-index:100;display:grid;place-items:center;animation:out .6s 3.2s forwards}
-.intro>*{grid-area:1/1}.bottle{width:110px;animation:bottle 1.4s ease forwards}
-.puff{width:40px;height:40px;border-radius:50%;background:radial-gradient(#fff9,#fff0 70%);filter:blur(10px);opacity:0;animation:puff 2.2s 1s ease-out forwards}.p2{animation-delay:1.2s;--x:-60px}.p3{animation-delay:1.4s;--x:60px}.p1{--x:0px}
-.intro-logo{width:min(260px,60vw);opacity:0;border-radius:50%;animation:logo 1.2s 1.8s ease forwards}
+.intro{position:fixed;inset:0;background:#000;z-index:100;display:grid;place-items:center;animation:out .5s 2.2s forwards}
+.intro>*{grid-area:1/1}.bottle{width:110px;animation:bottle .9s ease forwards}
+.puff{width:40px;height:40px;border-radius:50%;background:radial-gradient(#fff9,#fff0 70%);filter:blur(10px);opacity:0;animation:puff 1.5s .5s ease-out forwards}.p2{animation-delay:.7s;--x:-60px}.p3{animation-delay:.9s;--x:60px}.p1{--x:0px}
+.intro-logo{width:min(260px,60vw);opacity:0;border-radius:50%;animation:logo .8s 1.1s ease forwards}
 .skip{position:absolute;top:1rem;right:1rem;background:none;color:#fff;border:1px solid #666;padding:.5rem 1rem;cursor:pointer;font:inherit}
 @keyframes bottle{0%{opacity:0;transform:translateY(20px)}40%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-10px) scale(.95)}}
 @keyframes puff{0%{opacity:0;transform:translate(0,40px) scale(.5)}40%{opacity:.9}100%{opacity:0;transform:translate(var(--x),-20px) scale(9)}}
@@ -166,15 +168,22 @@ const cartItems = () => cart.map(i => ({ p: byId(i.id), q: i.q })).filter(i => i
 const count = () => cartItems().reduce((s, i) => s + i.q, 0);
 const F = { q: '', sort: 'nuevo', tags: [], brand: '', max: '', stock: false, nw: false, sale: false };
 
+async function fetchRemote() {
+  try {
+    const [p, a] = await Promise.race([
+      Promise.all([
+        sb.from('products').select('*').eq('published', true).order('created_at', { ascending: false }),
+        sb.from('announcements').select('*').eq('published', true)]),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))]);
+    if (p.error) throw p.error;
+    products = p.data.length ? p.data : DEMO; ads = a.data || []; loadError = '';
+    try { localStorage.setItem('dls-cache', JSON.stringify({ p: products, a: ads })); } catch {}
+  } catch { loadError = 'No pudimos cargar el catálogo. Revisa tu conexión e intenta de nuevo.'; if (products === null) products = []; }
+}
 async function loadData() {
   if (!sb) { products = DEMO; return; }
-  try {
-    const [p, a] = await Promise.all([
-      sb.from('products').select('*').eq('published', true).order('created_at', { ascending: false }),
-      sb.from('announcements').select('*').eq('published', true)]);
-    if (p.error) throw p.error;
-    products = p.data.length ? p.data : DEMO; ads = a.data || [];
-  } catch { loadError = 'No pudimos cargar el catálogo. Revisa tu conexión e intenta de nuevo.'; products = []; }
+  try { const c = JSON.parse(localStorage.getItem('dls-cache')); if (c && c.p) { products = c.p; ads = c.a || []; fetchRemote(); return; } } catch {}
+  await fetchRemote();
 }
 
 /* ============ Estructura común ============ */
@@ -418,7 +427,7 @@ function intro() {
   const d = document.createElement('div'); d.className = 'intro'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Bienvenida');
   d.innerHTML = '<svg class="bottle" viewBox="0 0 120 160" aria-hidden="true"><rect x="46" y="14" width="28" height="26" fill="none" stroke="#c9b27c" stroke-width="2"/><rect x="22" y="40" width="76" height="106" rx="10" fill="none" stroke="#fff" stroke-width="2"/></svg><span class="puff p1"></span><span class="puff p2"></span><span class="puff p3"></span><img class="intro-logo" src="logo.jpg" alt="Fragancias DLS"><button class="skip">Omitir</button>';
   const end = () => { d.remove(); try { sessionStorage.setItem('dls-intro', '1'); } catch {} };
-  d.querySelector('.skip').onclick = end; setTimeout(end, 3800); document.body.appendChild(d);
+  d.querySelector('.skip').onclick = end; setTimeout(end, 2700); document.body.appendChild(d);
 }
 
 /* ============ Enrutador ============ */
