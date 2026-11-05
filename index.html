@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Fragancias DLS: perfumes y cuidado personal con envíos a toda la República Dominicana.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<title>Fragancias DLS | Perfumes en República Dominicana</title>
+
+<!--
+=====================================================================
+ INSTRUCCIONES (sitio de 2 archivos: index.html + logo.jpg)
+=====================================================================
+ 1) SUPABASE: crea un proyecto en https://supabase.com
+ 2) SQL Editor > pega y ejecuta el SQL de abajo.
+ 3) Authentication > Users > Add user: crea correo y contraseña del dueño (Auto Confirm).
+    Luego en SQL Editor:
+      insert into admins (user_id) select id from auth.users where email='CORREO-DEL-DUENO';
+    Authentication > Sign In / Providers: desactiva "Allow new users to sign up".
+ 4) Project Settings > API: copia la URL y la clave "anon" y pégalas en CONFIG (más abajo).
+    (La clave anon es pública por diseño; la seguridad la dan las políticas RLS. NUNCA uses la service_role.)
+ 5) GITHUB PAGES: sube index.html y logo.jpg a un repositorio > Settings > Pages >
+    Deploy from a branch > main / (root). El panel de administración está en  TU-URL/#/admin
+ Sin configurar Supabase, el sitio funciona con productos de demostración.
+ Costo de envío: ponlo en CONFIG.SHIPPING_COST (RD$); si es null no se muestra.
+
+---------------------------- SQL ----------------------------
+create table if not exists products (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, brand text, description text, size text, notes text, image_url text,
+  tags text[] not null default '{}',
+  price numeric(10,2) not null check (price >= 0),
+  sale_price numeric(10,2) check (sale_price >= 0),
+  stock int not null default 0 check (stock >= 0),
+  published boolean not null default false, featured boolean not null default false, is_new boolean not null default false,
+  created_at timestamptz not null default now());
+create table if not exists announcements (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null default 'anuncio' check (kind in ('banner','oferta','anuncio')),
+  title text not null, body text, link text, starts_at timestamptz, ends_at timestamptz,
+  published boolean not null default false, created_at timestamptz not null default now());
+create table if not exists orders (
+  id uuid primary key default gen_random_uuid(),
+  customer_name text not null, phone text not null, address text not null, reference text,
+  items jsonb not null, total numeric(10,2) not null,
+  status text not null default 'nuevo' check (status in ('nuevo','confirmado','enviado','entregado','cancelado')),
+  created_at timestamptz not null default now());
+create table if not exists admins (user_id uuid primary key references auth.users(id) on delete cascade);
+create or replace function is_admin() returns boolean language sql security definer set search_path = public stable
+  as $$ select exists (select 1 from admins where user_id = auth.uid()) $$;
+alter table products enable row level security; alter table announcements enable row level security;
+alter table orders enable row level security; alter table admins enable row level security;
+create policy "lee productos publicados" on products for select using (published or is_admin());
+create policy "admin productos" on products for all using (is_admin()) with check (is_admin());
+create policy "lee anuncios vigentes" on announcements for select using (is_admin() or (published
+  and (starts_at is null or starts_at <= now()) and (ends_at is null or ends_at >= now())));
+create policy "admin anuncios" on announcements for all using (is_admin()) with check (is_admin());
+create policy "publico registra pedidos" on orders for insert with check (status='nuevo'
+  and jsonb_typeof(items)='array' and char_length(customer_name) between 2 and 120
+  and char_length(phone) between 7 and 30 and char_length(address) between 5 and 400);
+create policy "admin lee pedidos" on orders for select using (is_admin());
+create policy "admin actualiza pedidos" on orders for update using (is_admin()) with check (is_admin());
+create policy "admin elimina pedidos" on orders for delete using (is_admin());
+create policy "admin lee admins" on admins for select using (user_id = auth.uid());
+insert into storage.buckets (id, name, public) values ('products','products',true) on conflict do nothing;
+create policy "ver imagenes" on storage.objects for select using (bucket_id='products');
+create policy "admin sube imagenes" on storage.objects for insert with check (bucket_id='products' and is_admin());
+create policy "admin cambia imagenes" on storage.objects for update using (bucket_id='products' and is_admin());
+create policy "admin borra imagenes" on storage.objects for delete using (bucket_id='products' and is_admin());
+-------------------------------------------------------------
+-->
+
+<style>
+:root{--bg:#000;--panel:#0e0e0e;--line:#2a2a2a;--fg:#fff;--mute:#a8a8a8;--gold:#c9b27c;--ok:#8fd19e;--bad:#ff8a8a;--serif:'Cormorant Garamond',Georgia,serif;--sans:'Jost',system-ui,sans-serif}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:300 1rem/1.6 var(--sans)}
+img{max-width:100%;height:auto;display:block}a{color:inherit}
+h1,h2,h3{font-family:var(--serif);font-weight:500;line-height:1.15;margin:0 0 .6em}h1{font-size:clamp(2rem,5vw,3.4rem)}h2{font-size:clamp(1.6rem,3vw,2.2rem)}h3{font-size:1.25rem;margin:.2em 0}
+:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.wrap{max-width:1180px;margin:0 auto;padding:3rem 1.25rem}.narrow{max-width:680px;margin:0 auto;padding:2rem 1.25rem}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.between{justify-content:space-between}
+.skiplink{position:absolute;left:-999px}.skiplink:focus{left:1rem;top:1rem;background:#fff;color:#000;padding:.5rem;z-index:99}
+.banner{background:var(--gold);color:#000;text-align:center;padding:.5rem 1rem;font-weight:500}
+.top{display:flex;justify-content:space-between;align-items:center;padding:.6rem 1.25rem;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);z-index:20}
+.top img{border-radius:50%}.top nav{display:flex;gap:1.4rem;align-items:center}.top a{text-decoration:none}
+.cartlink b{background:var(--gold);color:#000;border-radius:99px;padding:0 .5rem;margin-left:.4rem;font-size:.8rem}
+.btn{background:var(--fg);color:#000;border:1px solid var(--fg);padding:.75rem 1.4rem;font:500 .95rem var(--sans);cursor:pointer;text-decoration:none;display:inline-block;transition:background .2s}
+.btn:hover:not(:disabled){background:var(--gold);border-color:var(--gold)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--fg);border-color:#666}.btn.ghost:hover:not(:disabled){background:#1a1a1a;border-color:var(--fg)}
+.link{background:none;border:0;color:var(--mute);text-decoration:underline;cursor:pointer;font:inherit}
+.hero{text-align:center;padding:4.5rem 1.25rem 3.5rem;display:grid;justify-items:center;gap:1rem;background:radial-gradient(ellipse at top,#1a1a1a,#000 70%)}
+.hero img{border-radius:50%}.hero h1{max-width:16ch;margin:0}.hero .row{justify-content:center}
+.ship{color:var(--gold);font-family:var(--serif);font-size:1.4rem;margin:.2rem 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:1.4rem}
+.card{background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column}
+.card .img{position:relative;display:block;aspect-ratio:300/380;overflow:hidden}.card .img img{width:100%;height:100%;object-fit:cover}
+.badge{position:absolute;top:.6rem;left:.6rem;background:#000;border:1px solid var(--gold);color:var(--gold);font-size:.75rem;padding:.1rem .6rem}.badge.sale{left:auto;right:.6rem;background:var(--gold);color:#000}
+.info{padding:1rem;display:grid;gap:.15rem}small,.info small{color:var(--mute)}.info .row{margin-top:.6rem}.info .btn{padding:.6rem .9rem;font-size:.85rem}
+.price{font-size:1.1rem;margin:.3rem 0}.price s{color:var(--mute);margin-right:.4rem}.price.big{font-size:1.6rem}.ok{color:var(--ok);margin:0}.out{color:var(--bad);margin:0}
+.tools{display:flex;gap:.75rem;flex-wrap:wrap}.tools input{flex:1;min-width:200px}.tools select{width:auto}
+input,select,textarea{background:#0b0b0b;color:var(--fg);border:1px solid #444;padding:.65rem .8rem;font:inherit;width:100%}input[type=checkbox]{width:auto}
+label{display:grid;gap:.3rem;margin:.8rem 0}label.chk{display:flex;gap:.5rem;align-items:center}
+.filters{margin:1rem 0;border:1px solid var(--line);padding:.8rem 1rem}.filters summary{cursor:pointer;font-weight:500}
+fieldset{border:0;padding:0;margin:.8rem 0;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}legend{color:var(--gold);padding:0;margin-bottom:.4rem;font-family:var(--serif);font-size:1.15rem}fieldset input,fieldset select{width:auto}
+.chip{background:transparent;color:var(--fg);border:1px solid #555;border-radius:99px;padding:.3rem .9rem;cursor:pointer;font:inherit;font-size:.9rem}.chip.on{background:var(--fg);color:#000}
+.detail{display:grid;grid-template-columns:1fr 1fr;gap:2.5rem;align-items:start}.tags span{border:1px solid #444;border-radius:99px;padding:.1rem .7rem;margin:0 .3rem .3rem 0;display:inline-block;font-size:.85rem;color:var(--mute)}
+.ads{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));padding-bottom:0}.ad{border:1px solid var(--gold);padding:1.2rem}
+.line{display:flex;gap:1rem;align-items:center;border-bottom:1px solid var(--line);padding:.8rem 0;flex-wrap:wrap}.line>div:first-of-type{flex:1;min-width:140px}
+.qty{display:flex;align-items:center;gap:.6rem}.qty button{width:2rem;height:2rem;background:none;color:#fff;border:1px solid #666;cursor:pointer}.qty button:disabled{opacity:.3}
+.totals{text-align:right;padding:1rem 0}.totals p{margin:.2rem 0}.totals b{margin-left:1rem}.big{font-size:1.4rem}
+.summary{background:var(--panel);border:1px solid var(--line);padding:1rem;white-space:pre-wrap;font:inherit}.note{border-left:3px solid var(--gold);padding:.6rem 1rem;background:var(--panel)}.error{color:var(--bad);margin:0}
+.empty{text-align:center;color:var(--mute)}.empty .btn{margin-top:1rem}
+.contact{text-align:center;border-top:1px solid var(--line)}.contact .row{justify-content:center}
+.order{border:1px solid var(--line);padding:1rem;margin:1rem 0}.tabs{margin:1rem 0}
+.toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--gold);color:#000;padding:.6rem 1.2rem;opacity:0;pointer-events:none;transition:opacity .25s;z-index:60}.toast.show{opacity:1}
+.intro{position:fixed;inset:0;background:#000;z-index:100;display:grid;place-items:center;animation:out .6s 3.2s forwards}
+.intro>*{grid-area:1/1}.bottle{width:110px;animation:bottle 1.4s ease forwards}
+.puff{width:40px;height:40px;border-radius:50%;background:radial-gradient(#fff9,#fff0 70%);filter:blur(10px);opacity:0;animation:puff 2.2s 1s ease-out forwards}.p2{animation-delay:1.2s;--x:-60px}.p3{animation-delay:1.4s;--x:60px}.p1{--x:0px}
+.intro-logo{width:min(260px,60vw);opacity:0;border-radius:50%;animation:logo 1.2s 1.8s ease forwards}
+.skip{position:absolute;top:1rem;right:1rem;background:none;color:#fff;border:1px solid #666;padding:.5rem 1rem;cursor:pointer;font:inherit}
+@keyframes bottle{0%{opacity:0;transform:translateY(20px)}40%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-10px) scale(.95)}}
+@keyframes puff{0%{opacity:0;transform:translate(0,40px) scale(.5)}40%{opacity:.9}100%{opacity:0;transform:translate(var(--x),-20px) scale(9)}}
+@keyframes logo{to{opacity:1}}@keyframes out{to{opacity:0;visibility:hidden}}
+@media(max-width:760px){.detail{grid-template-columns:1fr}.top nav{gap:.9rem}.grid{grid-template-columns:repeat(2,1fr);gap:.8rem}.info .row{flex-direction:column;align-items:stretch}}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-delay:0s!important;scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast" role="status"></div>
+<noscript><p style="padding:2rem">Esta tienda necesita JavaScript para funcionar.</p></noscript>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
+<script>
+/* ============ CONFIGURACIÓN (pega aquí tus datos de Supabase) ============ */
+const CONFIG = {
+  SUPABASE_URL: '',        // https://xxxx.supabase.co
+  SUPABASE_ANON_KEY: '',   // clave "anon" (pública)
+  SHIPPING_COST: null,     // ej: 350  (RD$). null = no mostrar costo de envío
+  WHATSAPP: '18494761125',
+  INSTAGRAM: 'https://www.instagram.com/fraganciasdls_/?cplk=emw3NTI3b2F0NHk2'
+};
+
+/* ============ Utilidades ============ */
+const TAGS = {
+  'Público': ['masculino','femenino','unisex'],
+  'Ocasión': ['formal','informal','ideal para el día','ideal para la noche'],
+  'Familia olfativa': ['floral','cítrica','amaderada','oriental','fresca','dulce'],
+  'Formato': ['perfume','crema','gel de baño','jabón','set o estuche']
+};
+const ALL_TAGS = Object.values(TAGS).flat();
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => 'RD$ ' + Number(n).toLocaleString('es-DO', {minimumFractionDigits: 2});
+const cur = p => (p.sale_price != null && +p.sale_price < +p.price) ? +p.sale_price : +p.price;
+const img = u => /^(https:\/\/|data:image\/)/.test(u || '') ? u : 'logo.jpg';
+const $ = s => document.querySelector(s);
+const root = $('#app');
+const sb = (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase) ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+let tt; const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2500); };
+
+/* Productos de demostración (se reemplazan al publicar productos reales) */
+const PH = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 380"><rect width="300" height="380" fill="#0d0d0d"/><rect x="105" y="150" width="90" height="140" rx="10" fill="none" stroke="#c9b27c" stroke-width="2"/><rect x="132" y="110" width="36" height="40" fill="none" stroke="#c9b27c" stroke-width="2"/><text x="150" y="345" fill="#777" font-family="sans-serif" font-size="14" text-anchor="middle">Demostración</text></svg>');
+const DEMO = [
+  ['femenino,floral,ideal para el día,perfume', 2500, 1990, 8, 1], ['masculino,amaderada,ideal para la noche,formal,perfume', 3200, null, 5, 0],
+  ['unisex,cítrica,fresca,informal,perfume', 2100, null, 0, 0], ['femenino,dulce,crema', 900, 750, 12, 0],
+  ['unisex,oriental,ideal para la noche,set o estuche', 4800, null, 3, 1], ['masculino,fresca,gel de baño', 650, null, 20, 0]
+].map(([t, price, sale_price, stock, is_new], i) => ({ id: 'demo-' + i, name: 'Producto demo ' + (i + 1), brand: 'Marca demo', demo: true, tags: t.split(','), price, sale_price, stock, is_new: !!is_new, featured: i < 4,
+  description: 'Contenido de demostración. El administrador cargará aquí los datos reales.', size: '100 ml', notes: i < 3 ? 'Notas demo: salida, corazón y fondo' : '', image_url: PH }));
+
+/* ============ Estado ============ */
+let products = null, ads = [], loadError = '', lastSummary = null;
+let cart = []; try { cart = JSON.parse(localStorage.getItem('dls-cart')) || []; } catch { cart = []; }
+const saveCart = () => { try { localStorage.setItem('dls-cart', JSON.stringify(cart)); } catch {} };
+const byId = id => (products || []).find(p => String(p.id) === String(id));
+const cartItems = () => cart.map(i => ({ p: byId(i.id), q: i.q })).filter(i => i.p);
+const count = () => cartItems().reduce((s, i) => s + i.q, 0);
+const F = { q: '', sort: 'nuevo', tags: [], brand: '', max: '', stock: false, nw: false, sale: false };
+
+async function loadData() {
+  if (!sb) { products = DEMO; return; }
+  try {
+    const [p, a] = await Promise.all([
+      sb.from('products').select('*').eq('published', true).order('created_at', { ascending: false }),
+      sb.from('announcements').select('*').eq('published', true)]);
+    if (p.error) throw p.error;
+    products = p.data.length ? p.data : DEMO; ads = a.data || [];
+  } catch { loadError = 'No pudimos cargar el catálogo. Revisa tu conexión e intenta de nuevo.'; products = []; }
+}
+
+/* ============ Estructura común ============ */
+function shell(content) {
+  const banners = ads.filter(a => a.kind === 'banner').map(a => `<div class="banner">${esc(a.title)}</div>`).join('');
+  root.innerHTML = `<a class="skiplink" href="#main">Saltar al contenido</a>${banners}
+  <header class="top"><a href="#/" aria-label="Inicio"><img src="logo.jpg" alt="Fragancias DLS" width="48" height="48"></a>
+    <nav><a href="#/catalogo">Catálogo</a><a href="#contacto" onclick="document.getElementById('contacto').scrollIntoView();return false">Contacto</a>
+    <a href="#/carrito" class="cartlink">Carrito<b id="cc" ${count() ? '' : 'hidden'}>${count()}</b></a></nav></header>
+  <main id="main">${content}</main>
+  <section class="wrap contact" id="contacto"><h2>Contacto</h2><p class="ship">Envíos a toda la República Dominicana</p>
+    <div class="row"><a class="btn" href="https://wa.me/${CONFIG.WHATSAPP}" target="_blank" rel="noopener noreferrer">WhatsApp +1 (849) 476-1125</a>
+    <a class="btn ghost" href="${CONFIG.INSTAGRAM}" target="_blank" rel="noopener noreferrer">Instagram @fraganciasdls_</a></div></section>`;
+}
+const updCount = () => { const c = $('#cc'); if (c) { c.textContent = count(); c.hidden = !count(); } };
+const empty = (t, href, l) => `<section class="wrap empty"><h2>${t}</h2><a class="btn" href="${href}">${l}</a></section>`;
+
+function card(p) {
+  const sale = cur(p) < +p.price, id = esc(p.id);
+  return `<article class="card"><a href="#/producto/${id}" class="img"><img src="${esc(img(p.image_url))}" alt="${esc(p.name)}" loading="lazy" width="300" height="380">
+    ${p.demo ? '<span class="badge">Demostración</span>' : ''}${sale ? '<span class="badge sale">Oferta</span>' : p.is_new ? '<span class="badge">Nuevo</span>' : ''}</a>
+  <div class="info"><small>${esc(p.brand)}</small><h3>${esc(p.name)}</h3><small>${esc(p.size)}</small>
+    <p class="price">${sale ? `<s>${money(p.price)}</s>` : ''}${money(cur(p))}</p>
+    <p class="${p.stock > 0 ? 'ok' : 'out'}">${p.stock > 0 ? 'Disponible' : 'Agotado'}</p>
+    <div class="row"><a class="btn ghost" href="#/producto/${id}">Ver detalles</a><button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart('${id}')">Agregar</button></div></div></article>`;
+}
+function addCart(id) {
+  const p = byId(id); if (!p) return;
+  const x = cart.find(i => String(i.id) === String(id));
+  if (x) x.q = Math.min(x.q + 1, p.stock); else cart.push({ id: p.id, q: 1 });
+  saveCart(); updCount(); toast(p.name + ' agregado al carrito');
+}
+
+/* ============ Vistas ============ */
+function home() {
+  const feat = products.filter(p => p.featured).slice(0, 4), offers = products.filter(p => cur(p) < +p.price).slice(0, 4);
+  const others = ads.filter(a => a.kind !== 'banner');
+  shell(`<section class="hero"><img src="logo.jpg" alt="Fragancias DLS" width="180" height="180"><h1>Perfumes que se quedan en la memoria</h1>
+    <p class="ship">Envíos a toda la República Dominicana</p><div class="row"><a class="btn" href="#/catalogo">Ver catálogo</a><a class="btn ghost" href="#contacto" onclick="document.getElementById('contacto').scrollIntoView();return false">Contacto</a></div></section>
+    ${loadError ? `<p class="wrap error" role="alert">${loadError}</p>` : ''}
+    ${others.length ? `<section class="wrap ads">${others.map(a => `<div class="ad"><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p>${a.link && /^(#|https:\/\/)/.test(a.link) ? `<a href="${esc(a.link)}">Ver más</a>` : ''}</div>`).join('')}</section>` : ''}
+    <section class="wrap"><h2>Productos destacados</h2><div class="grid">${feat.map(card).join('') || '<p class="empty">Pronto agregaremos productos destacados.</p>'}</div></section>
+    ${offers.length ? `<section class="wrap"><h2>Ofertas activas</h2><div class="grid">${offers.map(card).join('')}</div></section>` : ''}`);
+}
+
+function catalog() {
+  const brands = [...new Set(products.map(p => p.brand).filter(Boolean))];
+  const chip = t => `<button class="chip${F.tags.includes(t) ? ' on' : ''}" aria-pressed="${F.tags.includes(t)}" onclick="toggleTag('${t}',this)">${t}</button>`;
+  shell(`<section class="wrap"><h1>Catálogo</h1>
+    <div class="tools"><input type="search" id="fq" placeholder="Buscar por nombre, marca o notas" aria-label="Buscar" value="${esc(F.q)}">
+    <select id="fs" aria-label="Ordenar"><option value="nuevo">Más recientes</option><option value="precio-asc">Precio: menor a mayor</option><option value="precio-desc">Precio: mayor a menor</option><option value="nombre">Nombre A-Z</option></select></div>
+    <details class="filters" open><summary>Filtros</summary>
+    ${Object.entries(TAGS).map(([g, ts]) => `<fieldset><legend>${g}</legend>${ts.map(chip).join('')}</fieldset>`).join('')}
+    <fieldset><legend>Otros</legend><select id="fb" aria-label="Marca"><option value="">Todas las marcas</option>${brands.map(b => `<option>${esc(b)}</option>`).join('')}</select>
+    <input type="number" min="0" id="fm" placeholder="Precio máximo RD$" aria-label="Precio máximo" value="${esc(F.max)}">
+    <label class="chk"><input type="checkbox" id="fst"> Disponibles</label><label class="chk"><input type="checkbox" id="fn"> Nuevos</label><label class="chk"><input type="checkbox" id="fo"> Ofertas</label>
+    <button class="btn ghost" onclick="clearFilters()">Limpiar filtros</button></fieldset></details>
+    <p id="cnt" aria-live="polite"></p><div id="cg" class="grid"></div></section>`);
+  $('#fs').value = F.sort; $('#fb').value = F.brand; $('#fst').checked = F.stock; $('#fn').checked = F.nw; $('#fo').checked = F.sale;
+  const bind = (id, k, ev = 'input', get = e => e.target.value) => $(id).addEventListener(ev, e => { F[k] = get(e); drawGrid(); });
+  bind('#fq', 'q'); bind('#fs', 'sort', 'change'); bind('#fb', 'brand', 'change'); bind('#fm', 'max');
+  bind('#fst', 'stock', 'change', e => e.target.checked); bind('#fn', 'nw', 'change', e => e.target.checked); bind('#fo', 'sale', 'change', e => e.target.checked);
+  drawGrid();
+}
+function drawGrid() {
+  const q = F.q.toLowerCase();
+  let r = products.filter(p => (!q || `${p.name} ${p.brand || ''} ${p.notes || ''}`.toLowerCase().includes(q)) && F.tags.every(t => (p.tags || []).includes(t))
+    && (!F.brand || p.brand === F.brand) && (!F.max || cur(p) <= +F.max) && (!F.stock || p.stock > 0) && (!F.nw || p.is_new) && (!F.sale || cur(p) < +p.price));
+  const s = { 'precio-asc': (a, b) => cur(a) - cur(b), 'precio-desc': (a, b) => cur(b) - cur(a), nombre: (a, b) => a.name.localeCompare(b.name) }[F.sort];
+  if (s) r = [...r].sort(s);
+  $('#cnt').textContent = r.length + ' producto(s)';
+  $('#cg').innerHTML = r.length ? r.map(card).join('') : '<p class="empty" style="grid-column:1/-1">No hay productos con esos filtros. Prueba quitando alguno.</p>';
+}
+function toggleTag(t, el) { F.tags = F.tags.includes(t) ? F.tags.filter(x => x !== t) : [...F.tags, t]; el.classList.toggle('on'); el.setAttribute('aria-pressed', F.tags.includes(t)); drawGrid(); }
+function clearFilters() { Object.assign(F, { q: '', sort: 'nuevo', tags: [], brand: '', max: '', stock: false, nw: false, sale: false }); catalog(); }
+
+function detail(id) {
+  const p = byId(id);
+  if (!p) return shell(empty('Producto no encontrado', '#/catalogo', 'Volver al catálogo'));
+  shell(`<section class="wrap detail"><img src="${esc(img(p.image_url))}" alt="${esc(p.name)}"><div><small>${esc(p.brand)}</small><h1>${esc(p.name)}</h1><p>${esc(p.description)}</p>
+    ${p.notes ? `<p><b>Notas olfativas:</b> ${esc(p.notes)}</p>` : ''}${p.size ? `<p><b>Presentación:</b> ${esc(p.size)}</p>` : ''}
+    <p class="price big">${cur(p) < +p.price ? `<s>${money(p.price)}</s>` : ''}${money(cur(p))}</p>
+    <p class="tags">${(p.tags || []).map(t => `<span>${esc(t)}</span>`).join('')}</p>
+    <p class="${p.stock > 0 ? 'ok' : 'out'}">${p.stock > 0 ? 'Disponible' : 'Agotado'}</p>
+    <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart('${esc(p.id)}')">Agregar al carrito</button></div></section>`);
+}
+
+function cartView() {
+  if (lastSummary) return shell(`<section class="narrow"><h1>Resumen de tu pedido</h1><pre class="summary">${esc(lastSummary)}</pre>
+    <p class="note"><b>Tu pedido aún no está completo.</b> Envía el mensaje de WhatsApp para solicitarlo. La tienda lo confirmará contigo; no se ha hecho ningún cobro.</p>
+    <div class="row"><a class="btn" href="https://wa.me/${CONFIG.WHATSAPP}?text=${encodeURIComponent(lastSummary)}" target="_blank" rel="noopener noreferrer">Abrir WhatsApp de nuevo</a>
+    <button class="btn ghost" onclick="finishOrder()">Vaciar carrito y terminar</button></div></section>`);
+  const items = cartItems();
+  if (!items.length) return shell(empty('Tu carrito está vacío', '#/catalogo', 'Ver el catálogo'));
+  const sub = items.reduce((s, i) => s + cur(i.p) * i.q, 0), ship = CONFIG.SHIPPING_COST, total = sub + (ship || 0);
+  shell(`<section class="narrow"><h1>Carrito</h1>
+    ${items.map(({ p, q }) => `<div class="line"><img src="${esc(img(p.image_url))}" alt="" width="60" height="76"><div><b>${esc(p.name)}</b><br><small>${money(cur(p))}</small></div>
+      <div class="qty"><button aria-label="Menos" onclick="qty('${esc(p.id)}',-1)">−</button><span>${q}</span><button aria-label="Más" ${q >= p.stock ? 'disabled' : ''} onclick="qty('${esc(p.id)}',1)">+</button></div>
+      <b>${money(cur(p) * q)}</b><button class="link" onclick="qty('${esc(p.id)}',-99)">Quitar</button></div>`).join('')}
+    <div class="totals"><p>Subtotal <b>${money(sub)}</b></p>${ship != null ? `<p>Envío <b>${money(ship)}</b></p>` : '<p><small>El costo de envío se confirma por WhatsApp.</small></p>'}<p class="big">Total <b>${money(total)}</b></p></div>
+    <form id="ck" onsubmit="return checkout(event)" novalidate><h2>Datos de entrega</h2>
+    <label>Nombre para la factura<input name="name" autocomplete="name"><span class="error" id="e-name" role="alert"></span></label>
+    <label>Dirección de entrega<input name="address" autocomplete="street-address"><span class="error" id="e-address" role="alert"></span></label>
+    <label>Teléfono de contacto<input name="phone" type="tel" autocomplete="tel"><span class="error" id="e-phone" role="alert"></span></label>
+    <label>Referencia para la entrega (opcional)<input name="ref"></label>
+    <button class="btn" id="ckb">Confirmar y enviar por WhatsApp</button>
+    <p><small>Tus datos solo se usan para gestionar este pedido. Enviar el mensaje por WhatsApp completa la solicitud.</small></p></form></section>`);
+}
+function qty(id, d) {
+  const i = cart.find(x => String(x.id) === String(id)), p = byId(id); if (!i || !p) return;
+  i.q = Math.min(i.q + d, p.stock); if (i.q < 1) cart = cart.filter(x => x !== i);
+  saveCart(); cartView();
+}
+async function checkout(e) {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target)); const er = {};
+  if (f.name.trim().length < 2) er.name = 'Escribe el nombre para la factura.';
+  if (f.address.trim().length < 5) er.address = 'Escribe la dirección de entrega completa.';
+  if (f.phone.replace(/\D/g, '').length < 10) er.phone = 'Escribe un teléfono válido de 10 dígitos.';
+  ['name', 'address', 'phone'].forEach(k => $('#e-' + k).textContent = er[k] || '');
+  if (Object.keys(er).length) return false;
+  const items = cartItems(), sub = items.reduce((s, i) => s + cur(i.p) * i.q, 0), ship = CONFIG.SHIPPING_COST, total = sub + (ship || 0);
+  const text = ['*Nuevo pedido - Fragancias DLS*', '', `Nombre (factura): ${f.name.trim()}`, `Dirección: ${f.address.trim()}`, `Teléfono: ${f.phone.trim()}`, f.ref.trim() ? `Referencia: ${f.ref.trim()}` : null, '',
+    ...items.map(i => `- ${i.q} x ${i.p.name}${i.p.size ? ' (' + i.p.size + ')' : ''}: ${money(cur(i.p) * i.q)}`), '', `Subtotal: ${money(sub)}`, ship != null ? `Envío: ${money(ship)}` : null, `Total: ${money(total)}`].filter(x => x !== null).join('\n');
+  $('#ckb').disabled = true; $('#ckb').textContent = 'Preparando…';
+  if (sb) { try { await sb.from('orders').insert({ customer_name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), reference: f.ref.trim() || null, items: items.map(i => ({ id: i.p.id, name: i.p.name, qty: i.q, price: cur(i.p) })), total }); } catch {} }
+  lastSummary = text; cartView();
+  window.open(`https://wa.me/${CONFIG.WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  return false;
+}
+function finishOrder() { cart = []; saveCart(); lastSummary = null; location.hash = '#/'; }
+
+/* ============ Administración (#/admin) ============ */
+const adm = { tab: 'productos', rows: null, form: null, msg: '', err: '' };
+const iso = v => v ? new Date(v).toISOString() : null;
+const loc = v => v ? new Date(new Date(v) - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16) : '';
+const aflash = m => { adm.msg = m; };
+
+async function adminRoute() {
+  if (!sb) return root.innerHTML = '<div class="wrap empty"><h1>Administración</h1><p>Configura Supabase en el archivo index.html (CONFIG) para usar el panel.</p><a class="btn" href="#/">Ver tienda</a></div>';
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return adminLogin();
+  const a = await sb.from('admins').select('user_id').eq('user_id', data.session.user.id).maybeSingle();
+  if (!a.data) return root.innerHTML = '<div class="wrap empty"><h1>Sin acceso</h1><p>Esta cuenta no es administradora.</p><button class="btn" onclick="logout()">Cerrar sesión</button></div>';
+  adminView();
+}
+function adminLogin(err = '') {
+  root.innerHTML = `<form class="narrow" onsubmit="return login(event)"><h1>Acceso administrador</h1>
+    <label>Correo<input name="e" type="email" required autocomplete="username"></label><label>Contraseña<input name="p" type="password" required autocomplete="current-password"></label>
+    <p class="error" role="alert">${err}</p><button class="btn">Entrar</button></form>`;
+}
+async function login(e) {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); e.target.querySelector('button').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email: f.e, password: f.p });
+  error ? adminLogin('Correo o contraseña incorrectos.') : adminRoute(); return false;
+}
+async function logout() { await sb.auth.signOut(); adminRoute(); }
+async function adminView() {
+  adm.rows = null; adm.form = null;
+  const t = adm.tab, table = { productos: 'products', anuncios: 'announcements', pedidos: 'orders' }[t];
+  paintAdmin('<p>Cargando…</p>');
+  const { data, error } = await sb.from(table).select('*').order('created_at', { ascending: false });
+  if (error) return paintAdmin('<p class="error" role="alert">No se pudo cargar. Intenta de nuevo.</p>');
+  adm.rows = data; paintAdmin(t === 'productos' ? listP() : t === 'anuncios' ? listA() : listO());
+}
+function paintAdmin(body) {
+  root.innerHTML = `<div class="wrap"><div class="row between"><h1>Administración</h1><div class="row"><a class="btn ghost" href="#/">Ver tienda</a><button class="btn ghost" onclick="logout()">Cerrar sesión</button></div></div>
+    <div class="row tabs">${['productos', 'anuncios', 'pedidos'].map(t => `<button class="chip${adm.tab === t ? ' on' : ''}" onclick="adm.tab='${t}';adm.msg='';adminView()">${t}</button>`).join('')}</div>
+    ${adm.msg ? `<p class="note" role="status">${esc(adm.msg)}</p>` : ''}${body}</div>`;
+}
+/* Productos */
+function listP() {
+  return `<button class="btn" onclick="formP()">Nuevo producto</button>` + (adm.rows.length ? adm.rows.map(p => `<div class="line"><img src="${esc(img(p.image_url))}" alt="" width="50" height="63"><div><b>${esc(p.name)}</b><br><small>RD$ ${p.price} · ${p.stock} en stock · ${p.published ? 'Publicado' : 'Desactivado'}</small></div>
+    <button class="link" onclick="formP('${p.id}')">Editar</button><button class="link" onclick="togP('${p.id}')">${p.published ? 'Desactivar' : 'Publicar'}</button><button class="link" onclick="delP('${p.id}')">Eliminar</button></div>`).join('') : '<p class="empty">Aún no hay productos. Crea el primero.</p>');
+}
+function formP(id) {
+  const p = adm.rows.find(r => r.id === id) || { name: '', brand: '', description: '', size: '', notes: '', price: '', sale_price: '', stock: 0, tags: [], published: false, featured: false, is_new: false, image_url: '' };
+  const tx = (k, l) => `<label>${l}<input name="${k}" value="${esc(p[k])}"></label>`;
+  paintAdmin(`<form class="narrow" onsubmit="return saveP(event,'${id || ''}')"><h2>${id ? 'Editar' : 'Nuevo'} producto</h2>
+    ${tx('name', 'Nombre')}${tx('brand', 'Marca')}${tx('size', 'Tamaño o presentación')}${tx('notes', 'Notas olfativas')}
+    <label>Descripción<textarea name="description" rows="3">${esc(p.description)}</textarea></label>
+    <div class="row"><label>Precio RD$<input name="price" type="number" step="0.01" min="0" value="${esc(p.price)}"></label><label>Precio de oferta<input name="sale_price" type="number" step="0.01" min="0" value="${esc(p.sale_price ?? '')}"></label><label>Existencias<input name="stock" type="number" min="0" value="${esc(p.stock)}"></label></div>
+    <fieldset><legend>Etiquetas</legend>${ALL_TAGS.map(t => `<label class="chk"><input type="checkbox" name="tag" value="${t}" ${(p.tags || []).includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}</fieldset>
+    <label>Imagen (máx. 2 MB)<input name="file" type="file" accept="image/*"></label>${p.image_url ? `<img src="${esc(img(p.image_url))}" alt="Imagen actual" width="100">` : ''}
+    <label class="chk"><input type="checkbox" name="published" ${p.published ? 'checked' : ''}> Publicado</label><label class="chk"><input type="checkbox" name="featured" ${p.featured ? 'checked' : ''}> Destacado en inicio</label><label class="chk"><input type="checkbox" name="is_new" ${p.is_new ? 'checked' : ''}> Marcar como nuevo</label>
+    <p class="error" id="ferr" role="alert"></p><div class="row"><button class="btn" id="sv">Guardar producto</button><button type="button" class="btn ghost" onclick="adminView()">Cancelar</button></div></form>`);
+}
+async function saveP(e, id) {
+  e.preventDefault(); const fd = new FormData(e.target), g = k => fd.get(k), fail = m => { $('#ferr').textContent = m; return false; };
+  const price = parseFloat(g('price')), sale = g('sale_price') === '' ? null : parseFloat(g('sale_price')), stock = parseInt(g('stock'), 10), file = g('file');
+  if (!g('name').trim()) return fail('El nombre es obligatorio.');
+  if (isNaN(price) || price < 0) return fail('Escribe un precio válido.');
+  if (sale != null && (isNaN(sale) || sale < 0 || sale >= price)) return fail('El precio de oferta debe ser menor al precio normal.');
+  if (isNaN(stock) || stock < 0) return fail('Las existencias deben ser 0 o más.');
+  if (file && file.size > 2e6) return fail('La imagen supera 2 MB.');
+  const old = adm.rows.find(r => r.id === id);
+  if (old && +old.price !== price && !confirm(`¿Cambiar el precio de RD$ ${old.price} a RD$ ${price}?`)) return false;
+  $('#sv').disabled = true; $('#sv').textContent = 'Guardando…';
+  let image_url = old ? old.image_url : '';
+  if (file && file.size) {
+    const path = `${crypto.randomUUID()}.${file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    const up = await sb.storage.from('products').upload(path, file, { cacheControl: '31536000' });
+    if (up.error) { $('#sv').disabled = false; $('#sv').textContent = 'Guardar producto'; return fail('No se pudo subir la imagen.'); }
+    image_url = sb.storage.from('products').getPublicUrl(path).data.publicUrl;
+  }
+  const row = { name: g('name').trim(), brand: g('brand'), size: g('size'), notes: g('notes'), description: g('description'), price, sale_price: sale, stock, tags: fd.getAll('tag'), published: !!g('published'), featured: !!g('featured'), is_new: !!g('is_new'), image_url };
+  const { error } = id ? await sb.from('products').update(row).eq('id', id) : await sb.from('products').insert(row);
+  if (error) { $('#sv').disabled = false; $('#sv').textContent = 'Guardar producto'; return fail('No se pudo guardar: ' + error.message); }
+  aflash('Producto guardado'); await adminView(); return false;
+}
+async function togP(id) { const p = adm.rows.find(r => r.id === id); await sb.from('products').update({ published: !p.published }).eq('id', id); aflash(p.published ? 'Producto desactivado' : 'Producto publicado'); adminView(); }
+async function delP(id) { const p = adm.rows.find(r => r.id === id); if (!confirm(`¿Eliminar "${p.name}"? Esta acción no se puede deshacer.`)) return; const { error } = await sb.from('products').delete().eq('id', id); aflash(error ? 'No se pudo eliminar' : 'Producto eliminado'); adminView(); }
+/* Anuncios */
+function listA() {
+  return `<button class="btn" onclick="formA()">Nuevo anuncio</button>` + (adm.rows.length ? adm.rows.map(a => `<div class="line"><div><b>${esc(a.title)}</b><br><small>${a.kind} · ${a.published ? 'Publicado' : 'Borrador'}</small></div>
+    <button class="link" onclick="formA('${a.id}')">Editar</button><button class="link" onclick="delA('${a.id}')">Eliminar</button></div>`).join('') : '<p class="empty">Aún no hay anuncios.</p>');
+}
+function formA(id) {
+  const a = adm.rows.find(r => r.id === id) || { kind: 'anuncio', title: '', body: '', link: '', starts_at: '', ends_at: '', published: false };
+  paintAdmin(`<form class="narrow" onsubmit="return saveA(event,'${id || ''}')"><h2>${id ? 'Editar' : 'Nuevo'} anuncio</h2>
+    <label>Tipo<select name="kind">${[['banner', 'Banner superior'], ['oferta', 'Oferta'], ['anuncio', 'Anuncio']].map(([v, l]) => `<option value="${v}" ${a.kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label>Título<input name="title" value="${esc(a.title)}"></label><label>Mensaje<textarea name="body" rows="3">${esc(a.body)}</textarea></label>
+    <label>Enlace (opcional, ej. #/catalogo)<input name="link" value="${esc(a.link)}"></label>
+    <div class="row"><label>Inicio<input name="starts_at" type="datetime-local" value="${loc(a.starts_at)}"></label><label>Fin<input name="ends_at" type="datetime-local" value="${loc(a.ends_at)}"></label></div>
+    <label class="chk"><input type="checkbox" name="published" ${a.published ? 'checked' : ''}> Publicado</label>
+    <p class="error" id="ferr" role="alert"></p><div class="row"><button class="btn">Guardar anuncio</button><button type="button" class="btn ghost" onclick="adminView()">Cancelar</button></div></form>`);
+}
+async function saveA(e, id) {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), fail = m => { $('#ferr').textContent = m; return false; };
+  if (!f.title.trim()) return fail('El título es obligatorio.');
+  if (f.starts_at && f.ends_at && f.ends_at < f.starts_at) return fail('La fecha de fin debe ser posterior al inicio.');
+  const row = { kind: f.kind, title: f.title.trim(), body: f.body, link: f.link, published: !!f.published, starts_at: iso(f.starts_at), ends_at: iso(f.ends_at) };
+  const { error } = id ? await sb.from('announcements').update(row).eq('id', id) : await sb.from('announcements').insert(row);
+  if (error) return fail('No se pudo guardar.'); aflash('Anuncio guardado'); adminView(); return false;
+}
+async function delA(id) { if (!confirm('¿Eliminar este anuncio?')) return; await sb.from('announcements').delete().eq('id', id); aflash('Anuncio eliminado'); adminView(); }
+/* Pedidos */
+function listO() {
+  return adm.rows.length ? adm.rows.map(o => `<div class="order"><div class="row between"><b>${esc(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('es-DO')}</small></div>
+    <p>${esc(o.phone)} · ${esc(o.address)}${o.reference ? ` (${esc(o.reference)})` : ''}</p><ul>${o.items.map(i => `<li>${esc(i.qty)} × ${esc(i.name)}</li>`).join('')}</ul>
+    <div class="row between"><b>Total ${money(o.total)}</b><select aria-label="Estado" onchange="setO('${o.id}',this.value)">${['nuevo', 'confirmado', 'enviado', 'entregado', 'cancelado'].map(s => `<option ${o.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>`).join('') : '<p class="empty">Todavía no hay pedidos registrados.</p>';
+}
+async function setO(id, s) { if (s === 'cancelado' && !confirm('¿Cancelar este pedido?')) return adminView(); const { error } = await sb.from('orders').update({ status: s }).eq('id', id); aflash(error ? 'No se pudo actualizar' : 'Estado actualizado'); adminView(); }
+
+/* ============ Bienvenida ============ */
+function intro() {
+  let seen = false; try { seen = sessionStorage.getItem('dls-intro'); } catch {}
+  if (seen || matchMedia('(prefers-reduced-motion: reduce)').matches || location.hash.startsWith('#/admin')) return;
+  const d = document.createElement('div'); d.className = 'intro'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Bienvenida');
+  d.innerHTML = '<svg class="bottle" viewBox="0 0 120 160" aria-hidden="true"><rect x="46" y="14" width="28" height="26" fill="none" stroke="#c9b27c" stroke-width="2"/><rect x="22" y="40" width="76" height="106" rx="10" fill="none" stroke="#fff" stroke-width="2"/></svg><span class="puff p1"></span><span class="puff p2"></span><span class="puff p3"></span><img class="intro-logo" src="logo.jpg" alt="Fragancias DLS"><button class="skip">Omitir</button>';
+  const end = () => { d.remove(); try { sessionStorage.setItem('dls-intro', '1'); } catch {} };
+  d.querySelector('.skip').onclick = end; setTimeout(end, 3800); document.body.appendChild(d);
+}
+
+/* ============ Enrutador ============ */
+let loadingData = false;
+function route() {
+  const [, r, id] = (location.hash || '#/').split('/');
+  if (r === 'admin') { adminRoute(); return; }
+  if (products === null) { shell('<p class="wrap empty">Cargando…</p>'); if (!loadingData) { loadingData = true; loadData().then(route); } return; }
+  scrollTo(0, 0);
+  ({ catalogo: catalog, producto: () => detail(id), carrito: cartView }[r] || home)();
+}
+addEventListener('hashchange', route);
+intro(); route();
+</script>
+</body>
+</html>
+EOF
+ls -la fragancias-dls
